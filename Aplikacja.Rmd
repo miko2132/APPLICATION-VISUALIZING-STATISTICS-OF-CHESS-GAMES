@@ -1,0 +1,306 @@
+#Działajace
+```{r}
+library(shiny)
+library(shinythemes)
+library(ggplot2)
+library(dplyr)
+library(chessR)
+library(stockfish)
+library(tidyverse)
+library(vcd)
+library(sjPlot)
+library(rcompanion)
+
+library(FactoMineR)
+library(factoextra)
+library(gridExtra)
+library(ggrepel)
+
+# interfejs Shiny
+ui <- navbarPage(
+  title = "Program dla zawodników szachowych",
+  theme = shinytheme("darkly"),  # Ustawienie motywu na czarny
+  tabPanel("Strona startowa",
+           fluidPage(
+             titlePanel("Witaj w aplikacji dla zawodników szachowych!"),
+             mainPanel(
+               p("Witaj w aplikacji dla zawodników szachowych. Wybierz odpowiednią kartę, aby rozpocząć analizę."),
+               p("Karty dostępne w aplikacji:"),
+               tags$ul(
+                 tags$li("Porównywarka graczy: Porównaj statystyki dwóch graczy szachowych."),
+                 tags$li("Analiza korespondencji(godzina rozpoczęcia a wynik partii): Sprawdź o której godzinie grasz najlepiej."),
+                 tags$li("Progres gracza: Sprawdź jak zmienił się twój ranking na przestrzeni ostatnich miesięcy."),
+               ),
+               p("Instrukcja:"),
+               tags$ul(
+                 tags$li("W okienku do wprowadzenia nicku, gracz musi podać nazwe swojego profilu ustawioną na platforie chess.com"),
+               )
+             )
+  )),
+  tabPanel("Porównywarka graczy",
+           sidebarLayout(
+             sidebarPanel(
+               textInput("nick1", "Podaj nick gracza 1:", placeholder = "Wprowadź nick gracza 1"),
+               textInput("nick2", "Podaj nick gracza 2:", placeholder = "Wprowadź nick gracza 2"),
+               actionButton("generateButton", "Generuj wykresy")
+             ),
+             mainPanel(
+               tabsetPanel(
+                 tabPanel("Wykres 1", plotOutput("wykres1")),
+                 tabPanel("Wykres 2", plotOutput("wykres2")),
+                 tabPanel("Wykres 3", plotOutput("wykres3"))
+               )
+             )
+  )),
+  tabPanel("Analiza korespondencji",
+           fluidPage(
+             titlePanel("Analiza korespondencji(godzina rozpoczęcia a wynik partii)"),
+             sidebarLayout(
+               sidebarPanel(
+                 textInput("nick_analiza", "Podaj nick gracza:", placeholder = "Wprowadź nick gracza"),
+                 actionButton("analizaBtn", "Analizuj partię")
+               ),
+               mainPanel(
+                 plotOutput("analizaPlot"),
+                 p("Legenda:"),
+                 p("Niebieski kolor - 2: Remis, 1: Wygrana, 0: Przegrana"),
+                 p("Czerwony kolor - Godzina Rozpoczęcia Partii (00-23)"),
+                 p("Instrukcja:"),
+                 p("Niebieskie strzałki pokazują obszar wyniku partii. Czerwone strzałki pokazują godzine rozpoczęcia partii. Jeżeli czerwona strzałka jest dłuższa i bliższa do odpowiedniej strzałki niebieskiej, oznacza to że gracz osiąga wynik (liczba przy strzałce niebieskiej) o godzinie (liczba przy strzałce czerwonej). Np. strzałka niebieska - 2, najbliższa jej strzałka czerwona - 07, oznacza to że gracz o godzinie 7 najwięcej remisuje ")
+               )
+             )
+  )),
+  tabPanel("Progres gracza",
+           fluidPage(
+             titlePanel("Progres gracza"),
+             sidebarLayout(
+               sidebarPanel(
+                 textInput("playerNickProgress", "Podaj nick gracza:", placeholder = "Wprowadź nick gracza"),
+                 actionButton("generateProgressButton", "Generuj wykres")
+               ),
+               mainPanel(
+                 plotOutput("progressPlot")
+               )
+             )
+  ))
+)
+
+# Definicja serwera Shiny
+server <- function(input, output) {
+  # Funkcja generująca wykresy na podstawie podanych nicków graczy
+  generatePlots <- function(nick1, nick2) {
+    tabelaGracza1 <- get_raw_chessdotcom(usernames = nick1)
+    tabelaGracza2 <- get_raw_chessdotcom(usernames = nick2)
+    
+    # Wykres 1
+    output$wykres1 <- renderPlot({
+      opening1 <- filter(summarise(group_by(tabelaGracza1, TimeClass), count = n()), count > 0)
+      opening2 <- filter(summarise(group_by(tabelaGracza2, TimeClass), count = n()), count > 0)
+      
+      # Tworzenie danych dla wykresu
+      data <- rbind(data.frame(Player = "Gracz 1", opening1),
+                    data.frame(Player = "Gracz 2", opening2))
+      
+      ggplot(data, aes(x = TimeClass, y = count, fill = Player)) +
+  geom_col(position = "dodge") +
+  theme_minimal() +
+  theme(panel.background = element_rect(fill = rgb(34, 34, 34, maxColorValue = 255)), 
+        axis.text = element_text(color = rgb(255, 255, 255, maxColorValue = 255), size = 15),
+        axis.title = element_text(color = rgb(200, 200, 200, maxColorValue = 255), size = 15),
+        legend.background = element_rect(fill = rgb(34, 34, 34, maxColorValue = 255)),
+        legend.text = element_text(color = rgb(255, 255, 255, maxColorValue = 255),size = 15),
+        legend.title = element_text(color = rgb(255, 255, 255, maxColorValue = 255),size = 15),
+        plot.background = element_rect(fill = rgb(34, 34, 34, maxColorValue = 255)),
+    plot.title = element_text(color = "white"),
+  panel.border = element_rect(color = rgb(170,170,170, maxColorValue = 255), fill = NA),
+  panel.grid.major = element_line(color = rgb(100, 100, 100, maxColorValue = 255)),
+          panel.grid.minor = element_line(color = rgb(100, 100, 100, maxColorValue = 255), linetype = "dotted")) +
+  labs(title = "Rodzaj gry",x = "Rodzaj gry",
+             y = "Liczba partii", fill = "Gracz") +
+  scale_fill_manual(values = c("Gracz 1" = rgb(255, 255, 255, maxColorValue = 255), 
+                                "Gracz 2" = rgb(140, 140, 140, maxColorValue = 255)))
+    })
+    # Wykres 2
+    output$wykres2 <- renderPlot({
+      tempo1 <- filter(tabelaGracza1, !is.na(TimeControl))
+      tempo2 <- filter(tabelaGracza2, !is.na(TimeControl))
+      
+      # Tworzenie danych dla wykresu
+      data <- rbind(data.frame(Player = "Gracz 1", TimeControl = tempo1$TimeControl),
+                    data.frame(Player = "Gracz 2", TimeControl = tempo2$TimeControl))
+      
+      ggplot(data, aes(x = TimeControl, fill = Player)) +
+        geom_bar(position = "dodge") +
+        theme_minimal() +
+  theme(panel.background = element_rect(fill = rgb(34, 34, 34, maxColorValue = 255)), 
+        axis.text = element_text(color = rgb(255, 255, 255, maxColorValue = 255),size = 15),
+        axis.title = element_text(color = rgb(255, 255, 255, maxColorValue = 255),size = 15),
+        legend.text = element_text(color = rgb(255, 255, 255, maxColorValue = 255),size = 15),
+        legend.title = element_text(color = rgb(255, 255, 255, maxColorValue = 255),size = 15), 
+        plot.background = element_rect(fill = rgb(34, 34, 34, maxColorValue = 255)),  
+    plot.title = element_text(color = "white"),
+  panel.border = element_rect(color = "white", fill = NA),
+  panel.grid.major = element_line(color = rgb(100, 100, 100, maxColorValue = 255)),  
+        panel.grid.minor = element_line(color = rgb(100, 100, 100, maxColorValue = 255), linetype = "dotted")) +
+        labs(title = "Tempo gry",x = "Czas gry podany w sekundach",
+             y = "Liczba partii", fill = "Gracz") +
+  scale_fill_manual(values = c("Gracz 1" = rgb(255, 255, 255, maxColorValue = 255), 
+                                "Gracz 2" = rgb(140, 140, 140, maxColorValue = 255)))
+    })
+    
+    # Wykres 3
+output$wykres3 <- renderPlot({
+  opening1 <- filter(summarise(group_by(tabelaGracza1, ECOUrl), count = n()), count > 5) %>%
+    top_n(10, count)
+  opening2 <- filter(summarise(group_by(tabelaGracza2, ECOUrl), count = n()), count > 5) %>%
+    top_n(10, count)
+  
+  # Usunięcie prefiksu "https://www.chess.com/openings/" z wartości na osi y
+  opening1$ECOUrl <- sub("^https://www.chess.com/openings/(.*)", "\\1", opening1$ECOUrl)
+  opening2$ECOUrl <- sub("^https://www.chess.com/openings/(.*)", "\\1", opening2$ECOUrl)
+  
+  # Tworzenie danych dla wykresu
+  data <- rbind(data.frame(Player = "Gracz 1", opening1),
+                data.frame(Player = "Gracz 2", opening2))
+  
+  ggplot(data, aes(x = ECOUrl, y = count, fill = Player)) +
+    geom_col(position = "dodge") + 
+    coord_flip() +
+    theme_minimal() +
+    theme(
+      panel.background = element_rect(fill = rgb(34, 34, 34, maxColorValue = 255)),
+      axis.text = element_text(color = rgb(255, 255, 255, maxColorValue = 255), size = 15, margin = margin(r = 20)),  # Increase margin here
+      axis.title = element_text(color = rgb(255, 255, 255, maxColorValue = 255), size = 15),
+      legend.background = element_rect(fill = rgb(34, 34, 34, maxColorValue = 255)),
+      legend.text = element_text(color = rgb(255, 255, 255, maxColorValue = 255), size = 15),
+      legend.title = element_text(color = rgb(255, 255, 255, maxColorValue = 255), size = 15),
+      plot.background = element_rect(fill = rgb(34, 34, 34, maxColorValue = 255)),
+      plot.title = element_text(color = "white"),
+      panel.grid.major = element_line(color = rgb(100, 100, 100, maxColorValue = 255)),
+      panel.grid.minor = element_line(color = rgb(100, 100, 100, maxColorValue = 255), linetype = "dotted"),
+      plot.margin = margin(t = 20, r = 20, b = 20, l = 150)  # Increase left margin here
+    ) +
+    labs(
+      title = "Otwarcia szachowe",
+      x = "Otwarcia",
+      y = "Liczba partii", 
+      fill = "Gracz"
+    ) +
+    scale_fill_manual(values = c("Gracz 1" = rgb(255, 255, 255, maxColorValue = 255), 
+                                 "Gracz 2" = rgb(140, 140, 140, maxColorValue = 255)))
+
+})
+  }
+  
+  # Funkcja do analizy korespondencji
+  analizaPartii <- function(nick_analiza) {
+    dane_analiza <- get_raw_chessdotcom(usernames = nick_analiza)
+    
+    dane_analiza$StartTime1 <- substr(dane_analiza$StartTime, 1, 2)
+    dane_analiza$Result <- ifelse(dane_analiza$Result == "1/2-1/2", "1/2", dane_analiza$Result)
+    dane_analiza$Result <- ifelse(dane_analiza$White == nick_analiza, substr(dane_analiza$Result, 3, nchar(dane_analiza$Result)), dane_analiza$Result)
+    dane_analiza$Result <- ifelse(dane_analiza$Black == nick_analiza, substr(dane_analiza$Result, 1, nchar(dane_analiza$Result) - 2), dane_analiza$Result)
+    
+    dane_CA_analiza <- dane_analiza %>% 
+      transmute(firs = as.factor(StartTime1),
+                wynik = as.factor(Result))
+    
+    analiza_wykres <- plotCaAsym(table(dane_CA_analiza), mapowanie = "rowprincipal")
+     # Modyfikacja wykresu
+    analiza_wykres <- analiza_wykres + 
+      theme(panel.background = element_rect(fill = rgb(34, 34, 34, maxColorValue = 255)),  # Tło w kolorze szarym
+            axis.text = element_text(color = rgb(255, 255, 255, maxColorValue = 255),size = 15),  # Zmiana koloru tekstu osi na biały
+        axis.title = element_text(color = rgb(255, 255, 255, maxColorValue = 255),size = 15),  # Zmiana koloru tytułów osi na biały
+        legend.background = element_rect(fill = rgb(34, 34, 34, maxColorValue = 255)),  # Zmiana koloru tła legendy na kolor o RGB (34, 34, 34)
+        legend.text = element_text(color = rgb(255, 255, 255, maxColorValue = 255),size = 15),  # Zmiana koloru tekstu legendy na biały
+        legend.title = element_text(color = rgb(255, 255, 255, maxColorValue = 255),size = 15), 
+             panel.grid.major = element_line(color = rgb(100, 100, 100, maxColorValue = 255)),  # Zmiana koloru siatki głównej na szary
+        panel.grid.minor = element_line(color = rgb(100, 100, 100, maxColorValue = 255)),  # Kolor linii siatki
+            plot.title = element_text(color = "white"),
+            panel.border = element_rect(color = "white", fill = NA),
+            plot.background = element_rect(fill = rgb(34, 34, 34, maxColorValue = 255))) 
+    
+    return(analiza_wykres)
+  }
+  
+  # Funkcja generująca progres gracza
+  generateMyStats <- function(nick3) {
+    tabelaGracza <- get_raw_chessdotcom(usernames = nick3)
+    rapid_data <- tabelaGracza[tabelaGracza$TimeClass == "rapid", ]
+    black <- subset(rapid_data, Black == nick3)
+    blackk <- black[, c("UTCDate", "BlackElo")]
+    colnames(blackk) <- c("Date", "Elo")
+    blackk$Elo <- as.numeric(blackk$Elo)  # Konwersja kolumny Elo na typ numeryczny
+    
+    white <- subset(rapid_data, White == nick3)
+    whitee <- white[, c("UTCDate", "WhiteElo")]
+    colnames(whitee) <- c("Date", "Elo")
+    whitee$Elo <- as.numeric(whitee$Elo)  # Konwersja kolumny Elo na typ numeryczny
+    
+    
+    results <- rbind(whitee, blackk)
+    results$Date <- chartr(".", "/", results$Date)
+    results$Date <- as.Date(results$Date, "%Y/%m/%d")
+
+    # Sortowanie od najstarszej do najnowszej daty
+    results <- arrange(results, Date)
+    
+   tabela_filtr <- results %>% filter(row_number() %% 10 == 0)  # Zwiększenie liczby punktów na wykresie
+    
+    gg_ranking <- ggplot(tabela_filtr, aes(x = Date, y = Elo)) +
+  geom_step(color = "white", size = 1.5) +  # Zmiana koloru punktów na biały
+  labs(
+    title = "Zmiana rankingu Elo zawodnika",
+    x = "Data",
+    y = "Ranking Elo"
+  ) +
+  theme(panel.background = element_rect(fill = rgb(34, 34, 34, maxColorValue = 255)),  # Ustawienie tła na kolor RGB (34, 34, 34)
+        plot.background = element_rect(fill = rgb(34, 34, 34, maxColorValue = 255 )),   # Ustawienie tła wykresu na kolor RGB (34, 34, 34)
+        panel.grid.major = element_line(color = rgb(100, 100, 100, maxColorValue = 255)),  # Zmiana koloru siatki głównej na szary
+        panel.grid.minor = element_line(color = rgb(100, 100, 100, maxColorValue = 255)),
+        plot.title = element_text(color = "white", size = 15),  # Zmiana rozmiaru tekstu tytułu
+        axis.line = element_line(color = "white"),  # Zmiana koloru osi na biały
+        text = element_text(color = "white", size = 15),  # Zmiana koloru tekstu na biały i rozmiaru tekstu
+        axis.text = element_text(color = "white"),  # Zmiana koloru wartości na osiach x i y na biały
+        axis.title = element_text(color = "white")) +  # Zmiana koloru tekstu na biały
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1)))  # Zwiększenie odstępów między etykietami na osi y
+
+return(gg_ranking)
+  }
+  
+  
+  # Reakcja na kliknięcie przycisku "Generuj wykresy"
+  observeEvent(input$generateButton, {
+    nick1 <- input$nick1
+    nick2 <- input$nick2
+    if (nick1 != "" && nick2 != "") {
+      generatePlots(nick1, nick2)
+    }
+  })
+  
+  # Reakcja na kliknięcie przycisku "Analizuj partię"
+  observeEvent(input$analizaBtn, {
+    nick_analiza <- input$nick_analiza
+    if (nick_analiza != "") {
+      output$analizaPlot <- renderPlot({
+        analizaPartii(nick_analiza)
+      })
+    }
+  })
+  
+  # Reakcja na kliknięcie przycisku "Generuj wykres"
+  observeEvent(input$generateProgressButton, {
+    nickProgress <- input$playerNickProgress
+    if (nickProgress != "") {
+      output$progressPlot <- renderPlot({
+        ggplot <- generateMyStats(nickProgress)
+        print(ggplot)
+      })
+    }
+  })
+  
+}
+
+shinyApp(ui = ui, server = server)
+```
+
